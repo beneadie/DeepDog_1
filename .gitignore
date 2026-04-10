@@ -1,0 +1,11 @@
+.env
+venv
+agent_markdowns
+.claude
+__pycache__
+benchmark_outputs
+benchmark_runner.py
+benchmark_outputs_presources
+benchmark_outputs_run1
+_run2
+test_gemini_models.py
