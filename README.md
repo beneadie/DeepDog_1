@@ -9,6 +9,7 @@ This codebase is optimized for **configurability, cost control, and production r
 - **Multi-model architecture**: independent supervisor + sub-agent models so you can mix “reasoning” and “cheap throughput” (e.g., GPT‑5.2 supervisor + Gemini‑3‑Flash subagents).
 - **Prompt versioning**: swap prompt packs to tune effort/quality without touching logic.
 - **Production-minded defaults**: timeouts, retry behavior, and model fallback chains to reduce run failures.
+- **Open, extensible framework**: designed for others to expand, swap components, and experiment with new agents or prompts.
 
 Core entrypoint: `run_research.py`
 
@@ -261,7 +262,7 @@ After generation, a **citation validation** step checks that inline citations ma
 
 ### Stage 4 -- Subtopic generation (optional)
 
-Enabled via `ENABLE_SUBTOPIC_GENERATION` in config.
+Enabled via `ENABLE_SUBTOPIC_GENERATION` in config. The subtopic reports are designed to make agent actions easier to trace and evaluate so you can spot weaknesses and iterate on prompt/tooling improvements.
 
 1. `subtopic_evaluation`: an LLM reviews the final report and research topics to decide whether any sub-topics deserve dedicated deep-dive reports. Uses tool calls (`GenerateSubtopicReport` / `EndSubtopicEvaluation`) to express its decisions.
 2. `subtopic_generation`: for each approved subtopic, generates a full report from the collected research notes. All subtopic reports are generated **in parallel**.
