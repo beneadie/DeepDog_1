@@ -1,21 +1,24 @@
 # Kiyosi Deep Research v1
 
-Multi-agent research pipeline built with LangGraph + LangChain. It takes a prompt, runs iterative research, and generates a citation-backed report.
+Multi-agent research system built on LangGraph + LangChain. It turns a prompt into a structured research brief, runs a supervisor + sub-agent loop, and outputs a citation-backed report.
 
-## What this project does
+## Why this repo
 
-- Converts a user prompt into a structured research brief
-- Runs a supervisor + researcher agent loop for evidence gathering
-- Produces a final markdown report
-- Optionally exports source metadata and a research trace
+This codebase is optimized for **configurability, cost control, and production readiness**:
+
+- **Multi-model architecture**: independent supervisor + sub-agent models so you can mix “reasoning” and “cheap throughput” (e.g., GPT‑5.2 supervisor + Gemini‑3‑Flash subagents).
+- **Prompt versioning**: swap prompt packs to tune effort/quality without touching logic.
+- **Production-minded defaults**: timeouts, retry behavior, and model fallback chains to reduce run failures.
 
 Core entrypoint: `run_research.py`
 
 ## Requirements
 
 - Python 3.11+ recommended
-- One LLM provider API key (Gemini/OpenAI/Anthropic/Cerebras)
+- One LLM provider API key (Gemini/OpenAI/Anthropic/Cerebras/GLM)
 - Tavily API key for web search (recommended for normal operation)
+
+> Note: Cerebras support was unstable in local tests; use it only if you're prepared to troubleshoot.
 
 Dependencies are listed in `requirements.txt`.
 
@@ -110,7 +113,7 @@ By default (`OUTPUT_MODE = "file"` in `deep_research/config.py`), the run writes
 
 - `research_<timestamp>.md` (main report)
 - `research_data_<timestamp>.json` (sources metadata, if collected)
-- `trace_<timestamp>.md` (compressed research process trace, when available)
+- `trace_<timestamp>.md` (compressed research process trace, when enabled)
 - `error_<timestamp>.txt` (only when a run fails)
 
 ## Config knobs
@@ -118,14 +121,27 @@ By default (`OUTPUT_MODE = "file"` in `deep_research/config.py`), the run writes
 Main runtime config lives in `deep_research/config.py`:
 
 - `DEFAULT_MODEL` and `MODEL_FALLBACK_CHAIN`
+- `SUPERVISOR_MODEL` and `SUPERVISOR_MODEL_FALLBACK_CHAIN`
+- `PROMPT_VERSION` (prompt pack selector)
 - `RESEARCH_TIME_MIN_MINUTES` / `RESEARCH_TIME_MAX_MINUTES`
+- `MAX_RESEARCHER_ITERATIONS` / `SUBAGENT_TIMEOUT_SECONDS`
 - `OUTPUT_MODE` (`file`, `db`, `both`)
 - `SAVE_REPORT_TO_FILE`
 - `ENABLE_SUBTOPIC_GENERATION`
 
-Recommended model setting for this repo:
+Recommended default for cost efficiency + speed:
 
-- `DEFAULT_MODEL = "gemini-3-flash-preview"` for strong cost efficiency, speed, and depth-per-minute.
+- `DEFAULT_MODEL = "gemini-3-flash-preview"`
+
+### Prompt versions
+
+This repo ships multiple prompt packs and a routing layer that selects one by name.
+
+- `PROMPT_VERSION = "K1_2"` (current default)
+- `PROMPT_VERSION = "ORIGINAL"`
+- `PROMPT_VERSION = "FINANCE_V1"`
+
+Use this to control effort/quality without touching graph logic.
 
 ## Troubleshooting
 
@@ -264,3 +280,34 @@ AgentState carries these key fields through the pipeline:
   final_report          -- citation-backed output (set in Stage 3)
   secondary_reports     -- optional subtopic reports (set in Stage 4)
 ```
+
+## Benchmarking (separate)
+
+**DeepResearchBench score:** **53.53%**
+
+**Model pairing used:**
+
+- Supervisor: `gpt-5.2`
+- Subagents: `gemini-3-flash-preview`
+
+### Run the benchmark
+
+The benchmark runner executes the 100 task prompts in `data/prompt_data/query.jsonl` and saves per-task JSON files plus an aggregated JSONL submission file.
+
+```powershell
+python benchmark_runner.py
+```
+
+Useful options:
+
+```powershell
+python benchmark_runner.py --test-mode
+python benchmark_runner.py --concurrency 2
+python benchmark_runner.py --resume
+python benchmark_runner.py --output-dir custom_benchmark_outputs
+```
+
+**Outputs:**
+
+- `benchmark_outputs/<timestamp>/task_<id>.json`
+- `data/test_data/raw_data/<model_name>.jsonl` (aggregated submission file)
