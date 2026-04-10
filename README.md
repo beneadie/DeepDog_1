@@ -282,6 +282,10 @@ AgentState carries these key fields through the pipeline:
   secondary_reports     -- optional subtopic reports (set in Stage 4)
 ```
 
+## Acknowledgements
+
+This project builds on **ThinkDepth Deep Research** by Paichun Lin (MIT‑licensed): [https://github.com/thinkdepthai/Deep_Research](https://github.com/thinkdepthai/Deep_Research)
+
 ## Benchmarking (separate)
 
 **DeepResearchBench score:** **53.53%**
