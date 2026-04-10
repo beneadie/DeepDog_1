@@ -1,4 +1,4 @@
-# Kiyosi Deep Research v1
+# Deep Dog 1
 
 Multi-agent research system built on LangGraph + LangChain. It turns a prompt into a structured research brief, runs a supervisor + sub-agent loop, and outputs a citation-backed report.
 
