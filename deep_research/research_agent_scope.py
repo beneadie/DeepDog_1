@@ -107,7 +107,8 @@ async def write_draft_report(state: AgentState) -> Command[Literal["__end__"]]:
     draft_report_prompt = draft_report_generation_prompt.format(
         research_brief=research_brief,
         date=get_today_str(),
-        example_report=example_report
+        example_report=example_report,
+        target_language=target_language,
     )
 
     # Generate long-form text directly (avoid structured JSON wrapping for large payloads)

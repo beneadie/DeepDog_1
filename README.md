@@ -1,15 +1,94 @@
+<div style="text-align: center;">
+  <img src="dog.png" alt="Dog icon" width="160" height="160" />
+</div>
+
 # Deep Dog 1
 
 Multi-agent research system built on LangGraph + LangChain. It turns a prompt into a structured research brief, runs a supervisor + sub-agent loop, and outputs a citation-backed report.
 
-## Why this repo
+## About this repo
 
-This codebase is optimized for **configurability, cost control, and production readiness**:
+This project focuses on practical configurability and reproducible research quality:
 
-- **Multi-model architecture**: independent supervisor + sub-agent models so you can mix “reasoning” and “cheap throughput” (e.g., GPT‑5.2 supervisor + Gemini‑3‑Flash subagents).
+- **Multi-model architecture**: independent supervisor + sub-agent models so you can mix “reasoning” and “cheap throughput.”
 - **Prompt versioning**: swap prompt packs to tune effort/quality without touching logic.
-- **Production-minded defaults**: timeouts, retry behavior, and model fallback chains to reduce run failures.
+- **Production-minded configuration**: tune timing/effort limits and fallback behavior to control cost and reliability in production use.
 - **Open, extensible framework**: designed for others to expand, swap components, and experiment with new agents or prompts.
+- **Configurable to allow flexibility to switch from file-based to in-memory output depending on your needs**: switch output modes and consume the returned dict from `run_research()` to wire results directly into your app without relying on files, or run for peronsal local use with file-based output.
+
+## Diffusion process
+
+The agent follows a diffusion-style workflow: it **writes a draft first**, then iteratively refines that draft with real research. This keeps the output structured from the start while still grounding claims in sources.
+
+- **Stage 1: Draft from internal knowledge.** The system writes an initial report based on the research brief only, using `[RESEARCH_NEEDED]` placeholders where real data is required.
+- **Stage 2: Research + refine.** The supervisor spawns sub-agents to gather sources, then rewrites the draft using those findings.
+- **Example report guidance.** A strong example report is used to anchor the expected depth and rigor. In `ORIGINAL`, it is injected once at the start; in `K1_2`, it is repeatedly compared against the current draft so the supervisor can decide whether more research is needed (higher token usage, slightly better scores).
+
+## Agent Flow
+
+The system uses a **diffusion-based approach**: generate a loose draft from internal knowledge, then iteratively refine it with real research. The architecture is a hierarchical multi-agent system built with LangGraph.
+
+### High-level pipeline
+
+```
+User Query
+  |
+  v
+clarify_with_user          (pass-through; clarification logic currently disabled)
+  |
+  v
+write_research_brief       (LLM converts conversation into a detailed research brief)
+  |
+  v
+write_draft_report         (LLM writes an initial draft from internal knowledge only)
+  |
+  v
+supervisor_subgraph        (iterative research + draft refinement loop)
+  |
+  v
+final_report_generation    (synthesizes findings + draft into a citation-backed report)
+  |
+  v
+subtopic_evaluation        (optional; decides if supplementary reports are needed)
+  |
+  v
+subtopic_generation        (optional; generates detailed subtopic reports in parallel)
+```
+
+**Files**: `research_agent_scope.py` (scoping nodes), `research_agent_full.py` (full graph wiring).
+
+### Stage 1 -- Scoping
+
+| Node | What it does | Output |
+|---|---|---|
+| `clarify_with_user` | Placeholder for user clarification (currently skipped). | Routes to `write_research_brief`. |
+| `write_research_brief` | Translates raw user messages into a concrete, detailed research brief using structured output. | `research_brief` string stored in state. |
+| `write_draft_report` | Generates an initial draft report from the LLM's internal knowledge, guided only by the research brief. No citations -- uses `[RESEARCH_NEEDED]` placeholders where data is missing. | `draft_report` string stored in state, plus `supervisor_messages` seeded with the draft and brief. |
+
+### Stage 2 -- Supervisor research loop
+
+**File**: `multi_agent_supervisor.py`
+
+The supervisor is a looping subgraph that coordinates parallel sub-agents:
+
+```
+supervisor  <-->  supervisor_tools
+   |                  |
+   |     (delegates)  |---> ConductResearch  (deep-dive sub-agent)
+   |                  |---> DiscoverOpportunities  (broad exploratory sub-agent)
+   |                  |---> refine_draft_report  (rewrites draft with new findings)
+   |                  |---> think_tool  (LLM reflection)
+   |
+   +---> ResearchComplete  (exits loop)
+```
+
+**How each iteration works:**
+
+1. The **supervisor** node receives the current draft, research brief, collected findings, and elapsed time. It decides what to research next.
+2. The **supervisor_tools** node executes the supervisor's tool calls:
+   - `ConductResearch` / `DiscoverOpportunities` spawn sub-agents that run **in parallel** (up to 4 research + 2 discovery agents concurrently).
+   - Each sub-agent returns compressed findings which are appended to the shared `notes` list.
+   - `refine_draft_report` rewrites the draft report incorporating the new findings.
 
 Core entrypoint: `run_research.py`
 
@@ -117,18 +196,42 @@ By default (`OUTPUT_MODE = "file"` in `deep_research/config.py`), the run writes
 - `trace_<timestamp>.md` (compressed research process trace, when enabled)
 - `error_<timestamp>.txt` (only when a run fails)
 
+The trace file (and `trace_content` in in-memory mode) is a compact log of sub-agent actions, tool calls, and key findings for debugging, auditability, or evaluation.
+
+Example integration (in‑memory usage):
+
+```python
+import asyncio
+from pathlib import Path
+from run_research import run_research
+
+result = asyncio.run(run_research(
+    prompt="Summarize the latest AI safety research.",
+    output_dir=Path("outputs"),
+))
+
+final_report = result["final_report"]
+sources = result["sources"]
+trace = result.get("trace_content")
+```
+
 ## Config knobs
 
 Main runtime config lives in `deep_research/config.py`:
 
 - `DEFAULT_MODEL` and `MODEL_FALLBACK_CHAIN`
 - `SUPERVISOR_MODEL` and `SUPERVISOR_MODEL_FALLBACK_CHAIN`
+- `LITE_MODEL` (lightweight tasks like summarization)
 - `PROMPT_VERSION` (prompt pack selector)
 - `RESEARCH_TIME_MIN_MINUTES` / `RESEARCH_TIME_MAX_MINUTES`
+- `RESEARCH_STRICT_TIMEOUT_MINUTES`
 - `MAX_RESEARCHER_ITERATIONS` / `SUBAGENT_TIMEOUT_SECONDS`
+- `DEFAULT_MAX_TOKENS` (writer model cap)
 - `OUTPUT_MODE` (`file`, `db`, `both`)
 - `SAVE_REPORT_TO_FILE`
 - `ENABLE_SUBTOPIC_GENERATION`
+- `ENABLE_RESEARCH_TRACE`
+- `LOG_MODE` (`file`, `db`, `both`)
 
 Recommended default for cost efficiency + speed:
 
@@ -138,11 +241,19 @@ Recommended default for cost efficiency + speed:
 
 This repo ships multiple prompt packs and a routing layer that selects one by name.
 
-- `PROMPT_VERSION = "K1_2"` (current default)
-- `PROMPT_VERSION = "ORIGINAL"`
-- `PROMPT_VERSION = "FINANCE_V1"`
+- `PROMPT_VERSION = "K1_2"` (Gives same example article as ORIGINAL but feeds it back alongside current progress to the supervisor agent and asks it to compare the two and decide if the current progress is sufficient or if more research is needed. More token intensive but slightly improved quality)
+- `PROMPT_VERSION = "ORIGINAL"` (Gives example article to guide the level of detail expected. Strong results and relatively lower cost than K1_2)
+- `PROMPT_VERSION = "FINANCE_V1"` (Uses no example article, more open-ended, slightly less structured to allow for more creative and diverse content. Had good results for stock market research with low cost confugurations. Same token usage as ORIGINAL)
 
 Use this to control effort/quality without touching graph logic.
+
+## Diffusion process
+
+The agent follows a diffusion-style workflow: it **writes a draft first**, then iteratively refines that draft with real research. This keeps the output structured from the start while still grounding claims in sources.
+
+- **Stage 1: Draft from internal knowledge.** The system writes an initial report based on the research brief only, using `[RESEARCH_NEEDED]` placeholders where real data is required.
+- **Stage 2: Research + refine.** The supervisor spawns sub-agents to gather sources, then rewrites the draft using those findings.
+- **Example report guidance.** A strong example report is used to anchor the expected depth and rigor. In `ORIGINAL`, it is injected once at the start; in `K1_2`, it is repeatedly compared against the current draft so the supervisor can decide whether more research is needed (higher token usage, slightly better scores).
 
 ## Troubleshooting
 
@@ -288,12 +399,16 @@ This project builds on **ThinkDepth Deep Research** by Paichun Lin (MIT‑licens
 
 ## Benchmarking (separate)
 
-**DeepResearchBench score:** **53.53%**
+At time of publishing, Deep Dog 1 ranked **#14 overall** and **#6 among open-source models** on DeepResearchBench.
+
+**Official DeepResearchBench score:** **53.5%**
 
 **Model pairing used:**
 
 - Supervisor: `gpt-5.2`
 - Subagents: `gemini-3-flash-preview`
+
+If anyone with deeper pockets wants to re-run this with more expensive base models, that would be great 🙂
 
 ### Run the benchmark
 
