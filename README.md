@@ -6,7 +6,7 @@
 
 Multi-agent research system built on LangGraph + LangChain. It turns a prompt into a structured research brief, runs a supervisor + sub-agent loop, and outputs a citation-backed report. Agent is built on top of ThinkDepth Deep Research by Paichun Lin, ans was designed to have greater configurability, reliability and performance, as well as better tool use that allows for research on up to date and developing topics such as current events, stock predictions, etc.
 
-#### At time of publishing, Deep Dog 1 ranked #14 overall and #6 among open-source models on DeepResearchBench.
+#### At time of publishing, Deep Dog 1 ranked #14 overall and #6 among open-source models on [DeepResearchBench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard).
 
 
 
